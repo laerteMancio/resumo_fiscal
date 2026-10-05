@@ -1,11 +1,11 @@
 {
   "name": "relatorio-fiscal",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && vite build --ssr src/prerender.jsx --outDir .prerender && node .prerender/prerender.js",
     "preview": "vite preview"
   },
   "dependencies": {

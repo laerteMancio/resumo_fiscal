@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, CheckCircle2, FileText, FolderOpen, TriangleAlert, WalletCards } from 'lucide-react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import {analyticsConfigured,enableAnalytics,disableAnalytics,trackUsage} from './analytics.js'
 
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -51,6 +52,26 @@ function parseXml(text, fileName) {
 }
 
 export default function App() {
+  const [analyticsChoice, setAnalyticsChoice] = useState('pending')
+  useEffect(() => {
+    const choice = localStorage.getItem('resumo-fiscal-analytics') || 'pending'
+    setAnalyticsChoice(choice)
+    if (choice === 'accepted') enableAnalytics()
+  }, [])
+  function chooseAnalytics(choice) {
+    localStorage.setItem('resumo-fiscal-analytics',choice)
+    setAnalyticsChoice(choice)
+    if (choice === 'accepted') enableAnalytics(); else disableAnalytics()
+  }
+  async function shareTool() {
+    const url = 'https://resumo-fiscal.vercel.app/'
+    try {
+      if (navigator.share) await navigator.share({title:'Resumo Fiscal',text:'Relatório mensal de XMLs NF-e e NFC-e, com processamento local.',url})
+      else {await navigator.clipboard.writeText(url);setShareMessage('Link copiado!')}
+      trackUsage('share_clicked')
+    } catch {setShareMessage('Compartilhe: '+url)}
+  }
+  const [shareMessage,setShareMessage] = useState('')
   const inputRef = useRef(null)
   const filesRef = useRef(null)
   const [issuer, setIssuer] = useState('')
@@ -121,6 +142,7 @@ export default function App() {
     }
     valid.forEach(note => { if (cancelled.has(note.key) || ['101','151'].includes(note.status)) note.status = 'Cancelada' })
     setNotes(valid)
+    if (valid.length) trackUsage('xml_import_completed')
     setDuplicates(repeated)
     setIssuer(valid[0]?.cnpj || '')
     setErrors(invalid)
@@ -192,6 +214,7 @@ export default function App() {
       doc.setTextColor(100)
       doc.text(`Página ${i} de ${totalPages}`, 196, 290, { align: 'right' })
     }
+    trackUsage('pdf_generated',reportType)
     doc.save(`relatorio-fiscal-${reportType === 'summary' ? 'resumo' : 'completo'}-${issuer}-${year}-${month}.pdf`)
   }
 
@@ -216,9 +239,9 @@ export default function App() {
 
   return <main>
     <header className="hero">
-      <div className="eyebrow"><FileText size={16}/> RELATÓRIO FISCAL <span className="beta">Teste gratuito</span></div>
-      <h1>Seu resumo fiscal mensal.</h1>
-      <p>Importe os XMLs do posto, confira o movimento e gere o relatório para seu cliente.</p>
+      <div className="eyebrow"><FileText size={16}/> RESUMO FISCAL <span className="beta">Teste gratuito</span></div>
+      <h1>Relatório mensal de XMLs NF-e e NFC-e.</h1>
+      <p>Importe seus XMLs, confira o movimento mensal e gere seu relatório em PDF. Gratuito, sem cadastro e com processamento local.</p>
     </header>
 
     <div className="privacy"><CheckCircle2 size={20}/><div><b>Seus documentos fiscais permanecem com você.</b><p>Os XMLs e os dados extraídos são processados no navegador, sem envio ao servidor. Ao fechar ou limpar esta página, a sessão é descartada.</p></div></div>
@@ -263,7 +286,12 @@ export default function App() {
     </section>
 
     {!!errors.length && <details className="panel errors"><summary>Ver {errors.length} arquivo(s) não processado(s)</summary>{errors.map(e => <p key={e.file}><b>{e.file}</b>: {e.reason}</p>)}</details>}
-    <details className="panel privacy-details"><summary>Como funciona a privacidade?</summary><p>A aplicação lê os arquivos selecionados e mantém os resultados apenas na memória desta página. Não salvamos XMLs nem dados extraídos em banco de dados, cookies ou armazenamento do navegador. O PDF é criado no seu dispositivo.</p><p>A hospedagem pode tratar informações técnicas de acesso, como endereço IP, para funcionamento e segurança. Por isso, nossa promessa se refere aos documentos fiscais e aos dados extraídos, e não à ausência de todo tipo de dado técnico.</p><p>Versão gratuita de teste, sem cadastro no aplicativo ou cobrança. Os resultados dependem dos documentos importados, sem consulta à SEFAZ.</p></details>
+    <section className="benefits" aria-label="Vantagens"><article><h2>Conferência por dia</h2><p>Quantidade e valor dos documentos autorizados, agrupados no período escolhido.</p></article><article><h2>PDF para compartilhar</h2><p>Escolha o resumo mensal ou o detalhamento de todas as notas.</p></article><article><h2>Documentos com você</h2><p>XMLs ficam na memória do navegador e não são enviados ao servidor.</p></article></section>
+    <section className="panel faq"><h2>Perguntas sobre o Resumo Fiscal</h2><details><summary>Como gerar um relatório mensal dos XMLs?</summary><p>Selecione a pasta ou os arquivos XML, escolha a empresa, mês e ano. Confira os totais e clique em Gerar PDF. Extraia arquivos ZIP ou RAR antes de importar.</p></details><details><summary>Quais documentos são aceitos?</summary><p>NF-e modelo 55 e NFC-e modelo 65. Os totais consideram protocolos de autorização 100 e 150. Importar XMLs repetidos não soma a mesma chave duas vezes.</p></details><details><summary>Como tratar notas canceladas?</summary><p>Inclua os XMLs dos eventos de cancelamento autorizados na mesma importação. Sem esses arquivos, uma nota cujo XML original consta como autorizado pode continuar nos totais. Não consultamos a SEFAZ.</p></details><details><summary>Quem pode usar a ferramenta?</summary><p>Empresas, postos de combustíveis e profissionais que precisam organizar documentos fiscais e entregar um resumo mensal. Confira os documentos antes de usar o relatório na sua rotina contábil.</p></details><details><summary>É preciso pagar ou criar uma conta?</summary><p>A versão atual é gratuita, sem cadastro no aplicativo. Você pode gerar PDFs resumidos ou completos.</p></details></section>
+    <section className="share"><div><h2>Facilite a conferência de XMLs de quem trabalha com você.</h2><p>Compartilhe a ferramenta com sua equipe ou escritório contábil.</p></div><button className="primary" onClick={shareTool}>Compartilhar ferramenta</button><p role="status">{shareMessage}</p></section>
+    <details className="panel privacy-details"><summary>Como funciona a privacidade?</summary><p>A aplicação lê os arquivos selecionados e mantém os resultados apenas na memória desta página. Não salvamos XMLs nem dados extraídos em banco de dados, cookies ou armazenamento do navegador. O PDF é criado no seu dispositivo.</p><p>A hospedagem pode tratar informações técnicas de acesso, como endereço IP, para funcionamento e segurança. Por isso, nossa promessa se refere aos documentos fiscais e aos dados extraídos, e não à ausência de todo tipo de dado técnico.</p><p>Quando a medição estiver configurada e você permitir, o Google Analytics registra visitas e ações de uso (importação concluída e geração de PDF), sem nomes de arquivo, CNPJ, valores ou conteúdo dos documentos. Essa medição usa cookies e informações técnicas de navegação. Guardamos apenas sua preferência de medição neste navegador.</p><p>Versão gratuita de teste, sem cadastro no aplicativo ou cobrança. Os resultados dependem dos documentos importados, sem consulta à SEFAZ.</p></details>
+    {analyticsConfigured && analyticsChoice === 'pending' && <aside className="consent" aria-label="Preferências de medição"><p>Podemos medir visitas e uso para melhorar a ferramenta? Os dados fiscais não entram nessa medição.</p><button onClick={() => chooseAnalytics('accepted')}>Permitir medição</button><button onClick={() => chooseAnalytics('rejected')}>Continuar sem medição</button></aside>}
+    {analyticsConfigured && analyticsChoice !== 'pending' && <button className="text-button" onClick={() => {disableAnalytics();localStorage.removeItem('resumo-fiscal-analytics');setAnalyticsChoice('pending')}}>Preferências de medição</button>}
     <footer>Resumo de documentos autorizados (status 100/150). Inclua os XMLs dos eventos de cancelamento na importação para conciliar as notas. Confira os documentos de origem antes de entregar o relatório. Esta ferramenta não consulta a SEFAZ.</footer>
   </main>
 }
