@@ -51,7 +51,7 @@ function parseXml(text, fileName) {
   }
 }
 
-export default function App() {
+export default function App({ authorizeReport }) {
   const [analyticsChoice, setAnalyticsChoice] = useState('pending')
   useEffect(() => {
     const choice = localStorage.getItem('resumo-fiscal-analytics') || 'pending'
@@ -85,6 +85,7 @@ export default function App() {
   const [month, setMonth] = useState(String(now.getMonth() + 1).padStart(2, '0'))
   const [year, setYear] = useState(String(now.getFullYear()))
   const [loading, setLoading] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [reportType, setReportType] = useState('summary')
 
   const issuers = [...new Map(notes.map(n => [n.cnpj, {cnpj:n.cnpj, name:n.issuer}])).values()]
@@ -155,8 +156,11 @@ export default function App() {
     event.target.value = ''
   }
 
-  function generatePdf() {
-    if (!filtered.length) return
+  async function generatePdf() {
+    if (!filtered.length || generating) return
+    setGenerating(true)
+    try {
+    await authorizeReport()
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
     const period = new Date(Number(year), Number(month) - 1, 1)
     const totalValue = filtered.reduce((sum, n) => sum + n.value, 0)
@@ -216,6 +220,8 @@ export default function App() {
     }
     trackUsage('pdf_generated',reportType)
     doc.save(`relatorio-fiscal-${reportType === 'summary' ? 'resumo' : 'completo'}-${issuer}-${year}-${month}.pdf`)
+    } catch (error) { setErrors([{file: 'Geração do relatório', reason: error.message}]) }
+    finally { setGenerating(false) }
   }
 
   function addFooter(doc) {
@@ -239,9 +245,9 @@ export default function App() {
 
   return <main>
     <header className="hero">
-      <div className="eyebrow"><FileText size={16}/> RESUMO FISCAL <span className="beta">Teste gratuito</span></div>
+      <div className="eyebrow"><FileText size={16}/> RESUMO FISCAL <span className="beta">Área do assinante</span></div>
       <h1>Relatório mensal de XMLs NF-e e NFC-e.</h1>
-      <p>Importe seus XMLs, confira o movimento mensal e gere seu relatório em PDF. Gratuito, sem cadastro e com processamento local.</p>
+      <p>Importe seus XMLs, confira o movimento mensal e gere seu relatório em PDF. Acesso por assinatura e processamento local.</p>
     </header>
 
     <div className="privacy"><CheckCircle2 size={20}/><div><b>Seus documentos fiscais permanecem com você.</b><p>Os XMLs e os dados extraídos são processados no navegador, sem envio ao servidor. Ao fechar ou limpar esta página, a sessão é descartada.</p></div></div>
@@ -265,7 +271,7 @@ export default function App() {
         <label>Ano</label>
         <input className="year" type="number" min="2000" max="2100" value={year} onChange={e => setYear(e.target.value)}/>
       </div>
-      <div><label htmlFor="report-type">Formato do PDF</label><select id="report-type" value={reportType} onChange={e => setReportType(e.target.value)}><option value="summary">Resumo mensal</option><option value="complete">Completo com todas as notas</option></select><button style={{marginTop:10,width:"100%"}} className="primary" disabled={!filtered.length || loading} onClick={generatePdf}><FileText size={19}/>Gerar PDF</button></div>
+      <div><label htmlFor="report-type">Formato do PDF</label><select id="report-type" value={reportType} onChange={e => setReportType(e.target.value)}><option value="summary">Resumo mensal</option><option value="complete">Completo com todas as notas</option></select><button style={{marginTop:10,width:"100%"}} className="primary" disabled={!filtered.length || loading || generating} onClick={generatePdf}><FileText size={19}/>Gerar PDF</button></div>
     </section>
 
     <div className="session panel"><label>Empresa / CNPJ<select value={issuer} disabled={!notes.length || loading} onChange={e => setIssuer(e.target.value)}><option value="">Selecione uma empresa</option>{issuers.map(i => <option key={i.cnpj} value={i.cnpj}>{i.name} — {i.cnpj}</option>)}</select></label><button className="text-button" disabled={loading || !notes.length} onClick={() => {setNotes([]);setErrors([]);setIssuer('');setFolderName('');setDuplicates(0)}}>Limpar sessão</button></div>
@@ -287,9 +293,9 @@ export default function App() {
 
     {!!errors.length && <details className="panel errors"><summary>Ver {errors.length} arquivo(s) não processado(s)</summary>{errors.map(e => <p key={e.file}><b>{e.file}</b>: {e.reason}</p>)}</details>}
     <section className="benefits" aria-label="Vantagens"><article><h2>Conferência por dia</h2><p>Quantidade e valor dos documentos autorizados, agrupados no período escolhido.</p></article><article><h2>PDF para compartilhar</h2><p>Escolha o resumo mensal ou o detalhamento de todas as notas.</p></article><article><h2>Documentos com você</h2><p>XMLs ficam na memória do navegador e não são enviados ao servidor.</p></article></section>
-    <section className="panel faq"><h2>Perguntas sobre o Resumo Fiscal</h2><details><summary>Como gerar um relatório mensal dos XMLs?</summary><p>Selecione a pasta ou os arquivos XML, escolha a empresa, mês e ano. Confira os totais e clique em Gerar PDF. Extraia arquivos ZIP ou RAR antes de importar.</p></details><details><summary>Quais documentos são aceitos?</summary><p>NF-e modelo 55 e NFC-e modelo 65. Os totais consideram protocolos de autorização 100 e 150. Importar XMLs repetidos não soma a mesma chave duas vezes.</p></details><details><summary>Como tratar notas canceladas?</summary><p>Inclua os XMLs dos eventos de cancelamento autorizados na mesma importação. Sem esses arquivos, uma nota cujo XML original consta como autorizado pode continuar nos totais. Não consultamos a SEFAZ.</p></details><details><summary>Quem pode usar a ferramenta?</summary><p>Empresas, postos de combustíveis e profissionais que precisam organizar documentos fiscais e entregar um resumo mensal. Confira os documentos antes de usar o relatório na sua rotina contábil.</p></details><details><summary>É preciso pagar ou criar uma conta?</summary><p>A versão atual é gratuita, sem cadastro no aplicativo. Você pode gerar PDFs resumidos ou completos.</p></details></section>
+    <section className="panel faq"><h2>Perguntas sobre o Resumo Fiscal</h2><details><summary>Como gerar um relatório mensal dos XMLs?</summary><p>Selecione a pasta ou os arquivos XML, escolha a empresa, mês e ano. Confira os totais e clique em Gerar PDF. Extraia arquivos ZIP ou RAR antes de importar.</p></details><details><summary>Quais documentos são aceitos?</summary><p>NF-e modelo 55 e NFC-e modelo 65. Os totais consideram protocolos de autorização 100 e 150. Importar XMLs repetidos não soma a mesma chave duas vezes.</p></details><details><summary>Como tratar notas canceladas?</summary><p>Inclua os XMLs dos eventos de cancelamento autorizados na mesma importação. Sem esses arquivos, uma nota cujo XML original consta como autorizado pode continuar nos totais. Não consultamos a SEFAZ.</p></details><details><summary>Quem pode usar a ferramenta?</summary><p>Empresas, postos de combustíveis e profissionais que precisam organizar documentos fiscais e entregar um resumo mensal. Confira os documentos antes de usar o relatório na sua rotina contábil.</p></details><details><summary>É preciso pagar ou criar uma conta?</summary><p>É necessário criar uma conta e ter assinatura ativa. Os planos mensal e anual permitem gerar PDFs resumidos ou completos.</p></details></section>
     <section className="share"><div><h2>Facilite a conferência de XMLs de quem trabalha com você.</h2><p>Compartilhe a ferramenta com sua equipe ou escritório contábil.</p></div><button className="primary" onClick={shareTool}>Compartilhar ferramenta</button><p role="status">{shareMessage}</p></section>
-    <details className="panel privacy-details"><summary>Como funciona a privacidade?</summary><p>A aplicação lê os arquivos selecionados e mantém os resultados apenas na memória desta página. Não salvamos XMLs nem dados extraídos em banco de dados, cookies ou armazenamento do navegador. O PDF é criado no seu dispositivo.</p><p>A hospedagem pode tratar informações técnicas de acesso, como endereço IP, para funcionamento e segurança. Por isso, nossa promessa se refere aos documentos fiscais e aos dados extraídos, e não à ausência de todo tipo de dado técnico.</p><p>Quando a medição estiver configurada e você permitir, o Google Analytics registra visitas e ações de uso (importação concluída e geração de PDF), sem nomes de arquivo, CNPJ, valores ou conteúdo dos documentos. Essa medição usa cookies e informações técnicas de navegação. Guardamos apenas sua preferência de medição neste navegador.</p><p>Versão gratuita de teste, sem cadastro no aplicativo ou cobrança. Os resultados dependem dos documentos importados, sem consulta à SEFAZ.</p></details>
+    <details className="panel privacy-details"><summary>Como funciona a privacidade?</summary><p>A aplicação lê os arquivos selecionados e mantém os resultados apenas na memória desta página. Não salvamos XMLs nem dados extraídos em banco de dados, cookies ou armazenamento do navegador. O PDF é criado no seu dispositivo.</p><p>A hospedagem pode tratar informações técnicas de acesso, como endereço IP, para funcionamento e segurança. Por isso, nossa promessa se refere aos documentos fiscais e aos dados extraídos, e não à ausência de todo tipo de dado técnico.</p><p>Quando a medição estiver configurada e você permitir, o Google Analytics registra visitas e ações de uso (importação concluída e geração de PDF), sem nomes de arquivo, CNPJ, valores ou conteúdo dos documentos. Essa medição usa cookies e informações técnicas de navegação. Guardamos apenas sua preferência de medição neste navegador.</p><p>O servidor guarda dados da conta, da assinatura e solicitações de geração, sem receber o conteúdo fiscal. Os resultados dependem dos documentos importados, sem consulta à SEFAZ.</p></details>
     {analyticsConfigured && analyticsChoice === 'pending' && <aside className="consent" aria-label="Preferências de medição"><p>Podemos medir visitas e uso para melhorar a ferramenta? Os dados fiscais não entram nessa medição.</p><button onClick={() => chooseAnalytics('accepted')}>Permitir medição</button><button onClick={() => chooseAnalytics('rejected')}>Continuar sem medição</button></aside>}
     {analyticsConfigured && analyticsChoice !== 'pending' && <button className="text-button" onClick={() => {disableAnalytics();localStorage.removeItem('resumo-fiscal-analytics');setAnalyticsChoice('pending')}}>Preferências de medição</button>}
     <footer>Resumo de documentos autorizados (status 100/150). Inclua os XMLs dos eventos de cancelamento na importação para conciliar as notas. Confira os documentos de origem antes de entregar o relatório. Esta ferramenta não consulta a SEFAZ.</footer>

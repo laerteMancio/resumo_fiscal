@@ -1,0 +1,31 @@
+import React,{useEffect,useState} from 'react'
+import {supabase,request} from './auth.js'
+import App from './App.jsx'
+const plans=[['Mensal',import.meta.env.VITE_HOTMART_MONTHLY_URL],['Anual',import.meta.env.VITE_HOTMART_ANNUAL_URL]]
+function Offers(){return <div className="offers">{plans.map(([name,url])=>url&&/^https:\/\//.test(url)?<a key={name} className="primary" href={url} target="_blank" rel="noopener noreferrer">Assinar plano {name.toLowerCase()}</a>:<span key={name}>Plano {name.toLowerCase()}: vendas em preparação</span>)}</div>}
+export default function Account(){
+ const [session,setSession]=useState(null),[loading,setLoading]=useState(true),[entitlement,setEntitlement]=useState(null),[message,setMessage]=useState(''),[mode,setMode]=useState('login'),[busy,setBusy]=useState(false),[admin,setAdmin]=useState(null)
+ useEffect(()=>{
+  if(!supabase){setLoading(false);return}
+  supabase.auth.getSession().then(({data,error})=>{if(error)setMessage('Não foi possível recuperar a sessão.');setSession(data.session);setLoading(false)})
+  const {data:{subscription}}=supabase.auth.onAuthStateChange((event,value)=>{setSession(value);setEntitlement(null);setAdmin(null);if(event==='PASSWORD_RECOVERY')setMode('password')})
+  return ()=>subscription.unsubscribe()
+ },[])
+ async function refresh(){setBusy(true);setMessage('');try{setEntitlement(await request('/api/account'))}catch(e){setMessage(e.message)}finally{setBusy(false)}}
+ useEffect(()=>{if(!session||mode==='password')return;let alive=true;setBusy(true);request('/api/account').then(x=>{if(alive)setEntitlement(x)}).catch(e=>{if(alive)setMessage(e.message)}).finally(()=>{if(alive)setBusy(false)});return()=>{alive=false}},[session?.user?.id,mode])
+ async function submit(e){e.preventDefault();setBusy(true);setMessage('');const form=new FormData(e.target),email=String(form.get('email')||'').trim(),password=String(form.get('password')||'');try{
+  let result
+  if(mode==='signup')result=await supabase.auth.signUp({email,password,options:{emailRedirectTo:location.origin}})
+  else if(mode==='recover')result=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin})
+  else if(mode==='password')result=await supabase.auth.updateUser({password})
+  else result=await supabase.auth.signInWithPassword({email,password})
+  if(result.error)throw result.error
+  if(mode==='signup')setMessage('Confira seu e-mail para confirmar o cadastro. Use o mesmo e-mail da compra na Hotmart.')
+  if(mode==='recover')setMessage('Se houver uma conta, você receberá as instruções por e-mail.')
+  if(mode==='password'){setMode('login');setMessage('Senha atualizada.')}
+ }catch{setMessage('Não foi possível concluir. Confira os dados e tente novamente.')}finally{setBusy(false)}}
+ async function logout(){const {error}=await supabase.auth.signOut();if(error)setMessage('Não foi possível sair. Tente novamente.');else{setSession(null);setEntitlement(null);setAdmin(null)}}
+ if(loading)return <main className="account"><h1>Resumo Fiscal</h1><p>Carregando sua conta…</p></main>
+ if(session&&mode!=='password')return <><div className="account-bar"><span>{session.user.email}</span><button onClick={refresh} disabled={busy}>Atualizar assinatura</button>{entitlement?.administrator&&<button onClick={async()=>{try{setAdmin(await request('/api/admin'))}catch(e){setMessage(e.message)}}}>Administração</button>}<button onClick={logout}>Sair</button></div>{message&&<p className="account-message" role="alert">{message}</p>}{admin&&<section className="panel admin-panel"><h2>Administração</h2><p>{admin.reportRequests} solicitações de geração de relatório</p><p>Últimos 200 pagamentos; cada renovação aparece separadamente.</p><div className="table-scroll"><table><thead><tr><th>E-mail</th><th>Plano</th><th>Status</th><th>Acesso até</th></tr></thead><tbody>{admin.payments.map((p,i)=><tr key={i}><td>{p.email}</td><td>{p.plan==='annual'?'Anual':'Mensal'}</td><td>{p.status==='paid'?(new Date(p.valid_until)>new Date()?'Ativo':'Vencido'):p.status==='revoked'?'Revogado':'Não pago'}</td><td>{p.valid_until?new Date(p.valid_until).toLocaleDateString('pt-BR'):'—'}</td></tr>)}</tbody></table></div><button onClick={()=>setAdmin(null)}>Fechar painel</button></section>}{entitlement?.allowed?<><div className="account-status">{entitlement.administrator?'Administrador':`Assinatura ${entitlement.plan==='annual'?'anual':'mensal'} • acesso até ${new Date(entitlement.validUntil).toLocaleDateString('pt-BR')}`}</div><App authorizeReport={()=>request('/api/report','POST')}/></>:<main className="account panel"><h1>{busy?'Verificando assinatura…':'Sua assinatura'}</h1><p>O acesso é liberado após a confirmação do pagamento. Use o mesmo e-mail cadastrado na Hotmart.</p><Offers/><p>Já comprou? Clique em Atualizar assinatura. Para gerenciar cobranças e cancelamentos, acesse sua conta na Hotmart.</p></main>}</>
+ return <main className="account panel"><div className="eyebrow">RESUMO FISCAL</div><h1>Do XML ao PDF, em poucos passos</h1><p>Organize seus documentos fiscais com assinatura mensal ou anual. Os XMLs são processados no seu navegador.</p>{!supabase?<p role="alert">O acesso está em preparação. Configure a conexão com o Supabase para ativar as contas.</p>:<><h2>{({login:'Entrar na sua conta',signup:'Criar conta',recover:'Recuperar senha',password:'Definir nova senha'})[mode]}</h2><form onSubmit={submit}>{mode!=='password'&&<label>E-mail<input type="email" name="email" required autoComplete="email"/></label>}{mode!=='recover'&&<label>Senha<input name="password" type="password" minLength={8} required autoComplete={mode==='login'?'current-password':'new-password'}/></label>}<button className="primary" disabled={busy}>{busy?'Aguarde…':mode==='recover'?'Enviar instruções':mode==='password'?'Salvar senha':mode==='signup'?'Criar conta':'Entrar'}</button></form><p role="status">{message}</p><div className="account-links">{['login','signup','recover'].map(m=><button key={m} onClick={()=>{setMode(m);setMessage('')}}>{({login:'Entrar',signup:'Criar conta',recover:'Esqueci minha senha'})[m]}</button>)}</div></>}<Offers/><p>Cadastre-se com o mesmo e-mail usado na compra. Guardamos dados da conta, da assinatura e solicitações de uso, sem enviar XMLs ou conteúdo fiscal ao servidor.</p></main>
+}

@@ -1,6 +1,7 @@
 node_modules/
 dist/
-.vercel/
-.env*
 .prerender/
+.env
+.env.*
 !.env.example
+.vercel/

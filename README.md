@@ -1,37 +1,103 @@
-# Relatório Fiscal — Vercel
+# Resumo Fiscal — assinaturas Hotmart (v2)
 
-## Publicação pelo terminal no Windows
-Instale Node.js 22.13 ou superior. Extraia o ZIP e abra o terminal na pasta que contém package.json. Execute:
+Projeto React/Vite original com autenticação Supabase, autorização no backend Vercel e integração Hotmart 2.0.0. Preserve o domínio atual. Este pacote não foi publicado nem conectado às suas contas.
 
-```sh
-npm install
-npm run build
-npx vercel login
-npx vercel --prod
+## O que está pronto
+
+- Cadastro com confirmação do e-mail, login, logout e recuperação de senha.
+- Planos mensal/anual, mesmos recursos e solicitações ilimitadas.
+- Liberação pelo e-mail confirmado, igual ao da compra na Hotmart.
+- Administradores cadastrados por UUID no banco, nunca por campo editável do usuário.
+- Webhook com Hottok, produto/plano permitido, idempotência e transação SQL.
+- Pagamentos separados por transação: um atraso na nova cobrança não apaga o período já pago; reembolso/chargeback revoga a transação correspondente.
+- Cancelar renovação mantém o acesso até o vencimento do pagamento existente; expiração é verificada pelo servidor em cada solicitação.
+- Painel do administrador mostra os últimos 200 pagamentos e quantidade total de solicitações autorizadas de geração.
+- XMLs e dados fiscais continuam no navegador. O backend recebe apenas autenticação e registra a solicitação, sem CNPJ, valores ou nomes de arquivo.
+
+## 1. Supabase
+
+1. Crie um projeto em https://supabase.com/dashboard.
+2. Execute `supabase/schema.sql` no SQL Editor uma única vez. O script é para banco novo; não deve ser reexecutado sobre tabelas existentes.
+3. Em Authentication > Providers, habilite Email e **Confirm email**. Cadastro público deve permanecer habilitado; criar conta não concede assinatura.
+4. Em Authentication > URL Configuration, Site URL: `https://resumo-fiscal.vercel.app`; Redirect URLs: `https://resumo-fiscal.vercel.app` e `http://localhost:5173` para desenvolvimento. Não use curingas amplos em produção.
+5. Configure SMTP próprio em produção e ajuste os modelos de confirmação/recuperação. O usuário recebe o e-mail de confirmação ao se cadastrar, não um convite automático após comprar.
+6. Cadastre sua conta no app, confirme o e-mail e copie o UUID em Authentication > Users. Execute, substituindo o exemplo:
+
+```sql
+insert into public.administrators (user_id) values ('UUID-DA-SUA-CONTA');
 ```
 
-Escolha sua conta, crie o projeto relatorio-fiscal e confirme a pasta atual. A configuração Vite está em vercel.json. Não é necessário configurar variáveis de ambiente.
+As tabelas têm RLS habilitado e nenhum acesso público. Guarde a chave service_role somente na Vercel, nunca no navegador ou em repositório.
 
-## Alternativa pelo GitHub
-Envie o conteúdo desta pasta para um repositório no GitHub. Em https://vercel.com/new importe o repositório. Framework: Vite. Build: npm run build. Output: dist.
+## 2. Hotmart
 
-Os XMLs são processados na memória do navegador, sem envio ao servidor. Nenhum XML ou PDF de cliente acompanha este pacote.
+Cadastre o produto por assinatura e crie os planos mensal e anual com os preços escolhidos. Anote produto ID, plano ID de cada opção e URLs dos checkouts. Não coloque IDs de oferta no lugar dos IDs de plano.
 
-## Atualização v1.1: Google, medição e marketing
-1. Substitua os arquivos no projeto local. Não copie node_modules nem dist.
-2. Execute npm install e npm run build.
-3. Se usa GitHub conectado à Vercel: git add .; git commit -m "SEO e medicao de uso"; git push (execute cada comando separadamente).
-4. Se usa CLI: npx vercel --prod.
+Cadastre webhook em Ferramentas > Webhook, versão **2.0.0**, produto Resumo Fiscal, URL:
 
-### Google Search Console
-Adicione a propriedade de prefixo de URL https://resumo-fiscal.vercel.app/ na sua conta do Search Console. Escolha verificação por arquivo HTML, baixe o arquivo fornecido e coloque-o em public/ sem alterar seu nome. Publique novamente e conclua a verificação. Envie sitemap.xml na seção Sitemaps e solicite a indexação da página inicial. Indexação e posição nos resultados não são garantidas.
+`https://resumo-fiscal.vercel.app/api/hotmart-webhook`
 
-### Google Analytics 4
-Crie uma propriedade GA4 e um fluxo Web para https://resumo-fiscal.vercel.app/. Copie o ID de medição G-.... Em Vercel, Settings > Environment Variables, crie VITE_GA_MEASUREMENT_ID com esse valor para Production e publique novamente.
-Antes da configuração, nenhuma medição GA4 é enviada e o aviso não aparece. Depois, o visitante escolhe permitir ou continuar sem medição. Recusa não impede usar a ferramenta. Medição começa após permissão.
-Eventos: page_view; xml_import_completed; pdf_generated (report_format: summary/complete); share_clicked. Nunca enviar CNPJ, nome de empresa, nome de arquivo, chave, valores, período fiscal ou conteúdo XML. Desative a medição aprimorada do fluxo GA4 para evitar eventos automáticos extras. Dados técnicos e cookies de medição seguem a política do Google; não anuncie ausência de todo tipo de dado.
-Veja acessos no relatório de tempo real; para uso, veja eventos. pdf_generated significa arquivo gerado/início do download, não comprovação de entrega ou leitura. Métricas cobrem visitantes que permitem medição e podem ser reduzidas por bloqueadores.
+Selecione: PURCHASE_APPROVED, PURCHASE_COMPLETE, PURCHASE_REFUNDED, PURCHASE_CHARGEBACK, PURCHASE_CANCELED, PURCHASE_DELAYED, PURCHASE_EXPIRED e SUBSCRIPTION_CANCELLATION. Copie o token da aba de autenticação para HOTMART_HOTTOK.
 
-### Divulgação inicial
-Compartilhe o link com clientes e escritórios contábeis: "Transforme seus XMLs NF-e e NFC-e em um relatório mensal gratuito. Processamento no navegador: https://resumo-fiscal.vercel.app/".
-O conteúdo explicativo também está no HTML inicial para facilitar a leitura por buscadores. O aplicativo permanece na primeira tela.
+A aprovação deve conter `data.purchase.date_next_charge` em milissegundos. O sistema recusa uma aprovação sem vencimento, sem plano configurado ou sem código do assinante, em vez de inventar prazo. Confira o payload real do seu produto antes de vender. Notificações de teste com IDs fictícios serão rejeitadas; configure uma implantação de testes com os IDs correspondentes, sem misturar dados de produção.
+
+Na entrega/orientação ao comprador inclua: “Acesse https://resumo-fiscal.vercel.app, clique em Criar conta e use o mesmo e-mail da compra. Confirme seu e-mail e entre. O acesso é liberado após a confirmação do pagamento.” O gerenciamento da cobrança fica na Hotmart.
+
+## 3. Vercel
+
+Use o projeto Vercel existente e envie este código para o repositório já vinculado ou execute `vercel` em ambiente autenticado. Não substitua só a pasta dist: as funções em api/ são necessárias.
+
+Configure estas variáveis (modelo em `.env.example`):
+
+| Variável | Valor |
+| --- | --- |
+| VITE_SUPABASE_URL | URL do projeto Supabase |
+| VITE_SUPABASE_ANON_KEY | Chave anon pública do Supabase |
+| VITE_HOTMART_MONTHLY_URL | Checkout mensal |
+| VITE_HOTMART_ANNUAL_URL | Checkout anual |
+| VITE_GA_MEASUREMENT_ID | ID atual do Analytics, se usado |
+| SUPABASE_URL | Mesma URL Supabase, no backend |
+| SUPABASE_SERVICE_ROLE_KEY | Chave privada service_role |
+| HOTMART_HOTTOK | Token privado do webhook |
+| HOTMART_PRODUCT_ID | ID numérico do produto |
+| HOTMART_MONTHLY_PLAN_ID | ID do plano mensal |
+| HOTMART_ANNUAL_PLAN_ID | ID do plano anual |
+
+Depois de configurar, faça um novo deploy. As variáveis VITE_ entram no bundle durante o build. Nunca dê o prefixo VITE_ às três credenciais privadas. Separe projetos Supabase/configuração Hotmart de testes e produção.
+
+## 4. Validação antes de liberar as vendas
+
+- Cadastro, confirmação de e-mail, login, saída, recuperação e troca de senha.
+- Conta sem pagamento bloqueada; administrador com acesso.
+- Compra mensal/anual real de testes com e-mail confirmado libera o app.
+- Mesmo evento reenviado não cria outro pagamento.
+- Renovação gera novo período; atraso não remove o período pago anterior.
+- Cancelamento mantém o restante do período; reembolso/chargeback revoga o pagamento.
+- Vencimento bloqueia nova solicitação sem depender de tarefas agendadas.
+- Console de rede não recebe XML nem dados fiscais.
+- Painel e geração de PDF, incluindo erro de conexão, não autorizam acesso quando o servidor falha.
+
+```bash
+npm ci
+npm test
+npm run build
+```
+
+`npm run dev` serve apenas o frontend. Para testar também as funções api/ localmente, use Vercel CLI (`vercel dev`) com variáveis locais. As regras SQL foram testadas localmente com PostgreSQL embarcado (PGlite), incluindo duplicidade, atraso, cancelamento, reembolso, renovação, eventos antigos, rollback, expiração e bloqueio de acesso público. O teste completo de auth/webhook depende dos serviços configurados. Testes automatizados locais cobrem token, normalização dos eventos, IDs permitidos, vencimento, permissão administrativa, autenticação confirmada e falha fechada.
+
+## Limites desta versão
+
+A autorização e os registros são validados no servidor, mas a geração do PDF permanece no navegador. Um usuário técnico pode extrair/adaptar o JavaScript e contornar a interface local. Esta versão controla o acesso normal ao serviço; não oferece proteção contra cópia do código. Para impedir a geração contornando o cliente, será necessário mover uma parte indispensável da geração para o servidor e rever a política de processamento de dados fiscais.
+
+A contagem representa **solicitações autorizadas**, não confirmação de download. Não há limite mensal, bloqueio de compartilhamento de senha, sincronização retroativa de compras nem reconciliação automática com a API Hotmart. Eventos perdidos precisam ser reenviados pelo painel Hotmart. Trocar o e-mail na Hotmart/conta requer conferência manual para manter a associação.
+
+Eventos são ordenados por transação; reembolso/chargeback é terminal para aquela transação. Os eventos armazenam apenas ID/tipo/data, não o payload completo. Contas, e-mail/assinatura e histórico de solicitações são dados persistentes; ajuste sua política de privacidade e rotina de exclusão à operação comercial.
+
+## Documentação consultada
+
+- https://developers.hotmart.com/docs/pt-BR/tutorials/use-webhook-for-subscriptions/
+- https://developers.hotmart.com/docs/pt-BR/2.0.0/webhook/cancel-subscription-webhook/
+- https://developers.hotmart.com/docs/es/2.0.0/webhook/purchase-webhook/
+- https://supabase.com/docs/reference/javascript/auth-getuser
+
+A extração do RAR original preservou o aplicativo e os arquivos de configuração. Materiais de divulgação e node_modules não são necessários para a implantação e não acompanham este ZIP.
