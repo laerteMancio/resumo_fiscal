@@ -1,10 +1,11 @@
 import {jsPDF} from 'jspdf'
 import {autoTable} from 'jspdf-autotable'
+import {summarizeProducts,formatProductValue} from './products.js'
 import {formatLitres} from './fuels.js'
 const money = new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'})
 const dateLabel = new Intl.DateTimeFormat('pt-BR')
 const monthLabel = new Intl.DateTimeFormat('pt-BR', {month:'long', year:'numeric'})
-export function buildMonthlyPdf({filtered, daily, fuels, issuerName, issuer, month, year, reportType, generated = new Date().toLocaleString('pt-BR')}) {
+export function buildMonthlyPdf({filtered, daily, fuels, products = summarizeProducts(filtered), issuerName, issuer, month, year, reportType, generated = new Date().toLocaleString('pt-BR')}) {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
     const period = new Date(Number(year), Number(month) - 1, 1)
     const totalValue = filtered.reduce((sum, n) => sum + n.value, 0)
@@ -53,6 +54,14 @@ export function buildMonthlyPdf({filtered, daily, fuels, issuerName, issuer, mon
       headStyles: {fillColor: [31,41,55]}, footStyles: {fillColor: [255,244,215], textColor:[17,24,39]},
       styles: {fontSize: 9, cellPadding: 2.2}, columnStyles: {1:{halign:'right',cellWidth:42}},
       didDrawPage: () => addFooter(doc)
+    })
+
+    if (products.length) autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 8,
+      head: [['Código', 'Todos os produtos / descrição no XML', 'Unidade', 'Quantidade', 'Valor bruto']],
+      body: products.map(g=>[g.code,g.name,g.unit,g.missingQuantity?'Conferir XML':formatLitres(g.quantity),g.missingValue?'Conferir XML':formatProductValue(g.value)]),
+      foot: [[{content:'Quantidades comerciais; todas as operações selecionadas, sem compensação. Valores brutos dos itens, antes de descontos e ajustes.',colSpan:5}]],
+      theme:'grid', margin:{bottom:24,left:14,right:14}, styles:{fontSize:8,cellPadding:2}, headStyles:{fillColor:[31,41,55]}, footStyles:{fillColor:[245,245,245],textColor:[70,70,70]}, columnStyles:{0:{cellWidth:32},1:{cellWidth:70},2:{cellWidth:15},3:{cellWidth:30,halign:'right'},4:{cellWidth:35,halign:'right'}}, didDrawPage:()=>addFooter(doc)
     })
 
     if (reportType === 'complete') autoTable(doc, {

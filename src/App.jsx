@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, CheckCircle2, FileText, FolderOpen, TriangleAlert, WalletCards } from 'lucide-react'
 import {buildMonthlyPdf} from './reportPdf.js'
+import {summarizeProducts,formatProductValue} from './products.js'
 import {first, parseXml} from './xml.js'
 import {summarizeFuels, formatLitres} from './fuels.js'
 import {analyticsConfigured,enableAnalytics,disableAnalytics,trackUsage} from './analytics.js'
@@ -52,6 +53,7 @@ export default function App({ authorizeReport }) {
     n.cnpj === issuer && ['100','150'].includes(n.status) && n.date.getMonth() + 1 === Number(month) && n.date.getFullYear() === Number(year)
   ).sort((a, b) => a.date - b.date || Number(a.number) - Number(b.number)), [notes, month, year, issuer])
 
+  const products = useMemo(() => summarizeProducts(filtered), [filtered])
   const fuels = useMemo(() => summarizeFuels(filtered, notes), [filtered, notes])
   const daily = useMemo(() => {
     const map = new Map()
@@ -121,7 +123,7 @@ export default function App({ authorizeReport }) {
     setGenerating(true)
     try {
     await authorizeReport()
-    const doc = buildMonthlyPdf({filtered,daily,fuels,issuerName:issuers.find(i => i.cnpj === issuer)?.name || '',issuer,month,year,reportType})
+    const doc = buildMonthlyPdf({filtered,daily,fuels,products,issuerName:issuers.find(i => i.cnpj === issuer)?.name || '',issuer,month,year,reportType})
     trackUsage('pdf_generated',reportType)
     doc.save(`relatorio-fiscal-${reportType === 'summary' ? 'resumo' : 'completo'}-${issuer}-${year}-${month}.pdf`)
     } catch (error) { setErrors([{file: 'Geração do relatório', reason: error.message}]) }
@@ -185,6 +187,8 @@ export default function App({ authorizeReport }) {
       <p className="fuel-note">Litragem dos documentos selecionados; não representa estoque físico. Usamos qCom quando uCom está em litros; caso contrário, qTrib se uTrib estiver em litros. Não convertemos kg ou m³ por estimativa. As descrições são as informadas nos XMLs.</p>
       {!!fuels.issues.length && <details className="fuel-warnings"><summary>{fuels.issues.length} item(ns) fora da apuração de litros — conferir</summary><div className="table-wrap"><table><thead><tr><th>Arquivo / nota / item</th><th>Produto / ANP</th><th>Motivo</th></tr></thead><tbody>{fuels.issues.map((issue,i) => <tr key={i}><td>{issue.file}<br/>{issue.number} / {issue.item}</td><td>{issue.name}<br/>{issue.anp || 'Sem código ANP'}</td><td>{issue.reason}</td></tr>)}</tbody></table></div></details>}
     </section>}
+
+    {!!notes.length && <section className="panel table-panel" aria-label="Resumo por produto"><div className="section-title"><div><h2>Todos os produtos</h2><p>{products.length} combinações de código, descrição e unidade nos documentos autorizados do período.</p></div></div><div className="table-wrap"><table><thead><tr><th>Código</th><th>Produto no XML</th><th>Unidade</th><th>Quantidade</th><th>Valor dos produtos</th></tr></thead><tbody>{products.length ? products.map(g=><tr key={g.key}><td>{g.code || '—'}</td><td>{g.name}</td><td>{g.unit}</td><td>{g.missingQuantity ? 'Conferir XML' : formatLitres(g.quantity)}</td><td>{g.missingValue ? 'Conferir XML' : formatProductValue(g.value)}</td></tr>) : <tr><td colSpan="5" className="empty">Nenhum produto no período.</td></tr>}</tbody></table></div><p className="fuel-note">Quantidades comerciais (qCom/uCom) e valores brutos dos itens (vProd), incluindo combustíveis. Unidades diferentes não são somadas. Inclui todas as operações dos documentos selecionados, inclusive entradas e devoluções, sem compensação; este quadro não representa vendas líquidas ou estoque. O valor dos itens pode diferir do total das notas por descontos, frete e outros ajustes.</p></section>}
 
     <section className="panel table-panel">
       <div className="section-title"><div><h2>Resumo dia a dia</h2><p>{folderName ? `Pasta: ${folderName}` : 'Selecione uma pasta para começar.'}</p></div></div>

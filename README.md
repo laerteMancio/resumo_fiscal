@@ -121,3 +121,10 @@ Eventos são ordenados por transação; reembolso/chargeback é terminal para aq
 - https://supabase.com/docs/reference/javascript/auth-getuser
 
 A extração do RAR original preservou o aplicativo e os arquivos de configuração. Materiais de divulgação e node_modules não são necessários para a implantação e não acompanham este ZIP.
+
+## Atualização: sessão, login e produtos
+- Eventos de autenticação da mesma conta preservam a assinatura carregada e os XMLs em memória ao voltar à aba. Sair ou trocar de conta continua limpando o acesso; cada PDF segue autorizado no servidor.
+- Login com apresentação em duas colunas, formulário destacado e adaptação para celular.
+- Quadro Todos os produtos na tela e nos dois PDFs: agrupamento por empresa, código, descrição e unidade comercial; quantidades exatas com quatro casas e vProd com duas casas.
+- O quadro de produtos inclui todas as operações autorizadas do filtro, sem compensar entradas/devoluções ou notas referenciadas. Não representa venda líquida nem estoque; descontos, frete e outros ajustes não compõem vProd.
+- Atualize os arquivos do projeto no repositório conectado à Vercel e faça o deploy. Preserve as variáveis de ambiente. Não é necessário executar SQL ou alterar o webhook.

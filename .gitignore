@@ -1,7 +1,39 @@
+# Dependências e arquivos gerados
 node_modules/
 dist/
 .prerender/
+.vercel/
+coverage/
+
+# Configuração privada; manter apenas o modelo público
 .env
 .env.*
 !.env.example
-.vercel/
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Arquivos fiscais e pacotes locais
+*.xml
+*.zip
+*.rar
+*.7z
+*.tar
+*.gz
+
+# Material de divulgação, cópias extraídas e verificações locais
+/divulgacao/
+/resumo-fiscal-assinaturas/
+/tmp/
+/qa/
+/analysis/
+
+# Logs, editor e sistema operacional
+*.log
+npm-debug.log*
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini

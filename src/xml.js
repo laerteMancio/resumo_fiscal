@@ -1,3 +1,4 @@
+import {extractProductItems} from './products.js'
 import {extractFuelItems} from './fuels.js'
 
 export function first(node, name) {
@@ -32,6 +33,7 @@ export function parseXml(text, fileName) {
     purpose: first(ide, 'finNFe'),
     references: [...ide.getElementsByTagNameNS('*', 'refNFe')].map(n => n.textContent.trim()),
     fuelItems: extractFuelItems(inf),
+    productItems: extractProductItems(inf),
     cnpj: first(emit, 'CNPJ'),
     date,
     model: first(ide, 'mod') === '65' ? 'NFC-e' : 'NF-e',
