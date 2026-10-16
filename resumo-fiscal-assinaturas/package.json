@@ -1,6 +1,6 @@
 {
   "name": "relatorio-fiscal",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -20,6 +20,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
     "@vitejs/plugin-react": "6.0.2",
+    "@xmldom/xmldom": "^0.9.12",
     "vite": "8.0.13"
   },
   "engines": {

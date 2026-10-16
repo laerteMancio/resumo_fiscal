@@ -1,55 +1,14 @@
 'use client'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, CheckCircle2, FileText, FolderOpen, TriangleAlert, WalletCards } from 'lucide-react'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import {buildMonthlyPdf} from './reportPdf.js'
+import {first, parseXml} from './xml.js'
+import {summarizeFuels, formatLitres} from './fuels.js'
 import {analyticsConfigured,enableAnalytics,disableAnalytics,trackUsage} from './analytics.js'
 
 
 const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 const dateLabel = new Intl.DateTimeFormat('pt-BR')
-const monthLabel = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' })
-
-function first(node, name) {
-  const list = node?.getElementsByTagNameNS('*', name)
-  return list?.[0]?.textContent?.trim() || ''
-}
-
-function parseDate(value) {
-  if (!value) return null
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : null
-}
-
-function parseXml(text, fileName) {
-  const xml = new DOMParser().parseFromString(text, 'application/xml')
-  if (xml.querySelector('parsererror')) throw new Error('XML malformado')
-  const inf = xml.getElementsByTagNameNS('*', 'infNFe')[0]
-  if (!inf) throw new Error('Não é uma NF-e/NFC-e reconhecida')
-
-  const ide = inf.getElementsByTagNameNS('*', 'ide')[0]
-  const emit = inf.getElementsByTagNameNS('*', 'emit')[0]
-  const dest = inf.getElementsByTagNameNS('*', 'dest')[0]
-  const total = inf.getElementsByTagNameNS('*', 'ICMSTot')[0]
-  const prot = xml.getElementsByTagNameNS('*', 'infProt')[0]
-  const date = parseDate(first(ide, 'dhEmi') || first(ide, 'dEmi'))
-  if (!['55', '65'].includes(first(ide, 'mod'))) throw new Error('Modelo não suportado')
-  if (!date) throw new Error('Data de emissão não encontrada')
-
-  return {
-    fileName,
-    cnpj: first(emit, 'CNPJ'),
-    date,
-    model: first(ide, 'mod') === '65' ? 'NFC-e' : 'NF-e',
-    number: first(ide, 'nNF') || '-',
-    series: first(ide, 'serie') || '-',
-    issuer: first(emit, 'xNome') || first(emit, 'xFant') || 'Não informado',
-    recipient: first(dest, 'xNome') || 'Consumidor não identificado',
-    value: Number(first(total, 'vNF').replace(',', '.')) || 0,
-    key: (inf.getAttribute('Id') || '').replace(/^NFe/, ''),
-    status: first(prot, 'cStat') || (prot ? 'Processada' : 'Sem protocolo')
-  }
-}
 
 export default function App({ authorizeReport }) {
   const [analyticsChoice, setAnalyticsChoice] = useState('pending')
@@ -93,6 +52,7 @@ export default function App({ authorizeReport }) {
     n.cnpj === issuer && ['100','150'].includes(n.status) && n.date.getMonth() + 1 === Number(month) && n.date.getFullYear() === Number(year)
   ).sort((a, b) => a.date - b.date || Number(a.number) - Number(b.number)), [notes, month, year, issuer])
 
+  const fuels = useMemo(() => summarizeFuels(filtered, notes), [filtered, notes])
   const daily = useMemo(() => {
     const map = new Map()
     filtered.forEach(n => {
@@ -103,8 +63,8 @@ export default function App({ authorizeReport }) {
       item.value += n.value
       map.set(key, item)
     })
-    return [...map.values()].sort((a, b) => a.date - b.date)
-  }, [filtered])
+    return [...map.values()].map(d => ({...d, scaledLitres: fuels.daily.get(`${d.date.getFullYear()}-${String(d.date.getMonth()+1).padStart(2,'0')}-${String(d.date.getDate()).padStart(2,'0')}`) || 0n})).sort((a, b) => a.date - b.date)
+  }, [filtered, fuels])
 
   async function selectFolder(event) {
     const files = [...event.target.files].filter(f => f.name.toLowerCase().endsWith('.xml'))
@@ -161,79 +121,15 @@ export default function App({ authorizeReport }) {
     setGenerating(true)
     try {
     await authorizeReport()
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const period = new Date(Number(year), Number(month) - 1, 1)
-    const totalValue = filtered.reduce((sum, n) => sum + n.value, 0)
-    const generated = new Date().toLocaleString('pt-BR')
-
-    doc.setFillColor(17, 24, 39)
-    doc.rect(0, 0, 210, 38, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(19)
-    doc.text('Relatório fiscal mensal', 14, 14)
-    doc.setFontSize(9)
-    doc.text((issuers.find(i => i.cnpj === issuer)?.name || '').slice(0,85), 14, 21)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(10)
-    doc.text(monthLabel.format(period).replace(/^./, c => c.toUpperCase()), 14, 27)
-    doc.text(`Gerado em ${generated}`, 196, 33, { align: 'right' })
-    doc.text(`CNPJ: ${issuer}`, 14, 33)
-
-    autoTable(doc, {
-      startY: 45,
-      head: [['Documentos', 'Dias com movimento', 'Valor total']],
-      body: [[String(filtered.length), String(daily.length), money.format(totalValue)]],
-      theme: 'grid',
-      headStyles: { fillColor: [245, 158, 11], textColor: [17, 24, 39], fontStyle: 'bold' },
-      styles: { fontSize: 11, cellPadding: 4 }
-    })
-
-    autoTable(doc, {
-      startY: doc.lastAutoTable.finalY + 8,
-      head: [['Data', 'Total', 'NF-e', 'NFC-e', 'Valor do dia']],
-      body: daily.map(d => [dateLabel.format(d.date), d.quantity, d.nfe, d.nfce, money.format(d.value)]),
-      theme: 'striped',
-      styles: {fontSize:9, cellPadding:1.4},
-      headStyles: { fillColor: [31, 41, 55] },
-      columnStyles: { 4: { halign: 'right' } },
-      didDrawPage: data => addFooter(doc, data.pageNumber)
-    })
-
-    if (reportType === 'complete') autoTable(doc, {
-      startY: doc.lastAutoTable.finalY + 10,
-      head: [['Data', 'Modelo', 'Número/Série', 'Destinatário', 'Valor']],
-      body: filtered.map(n => [dateLabel.format(n.date), n.model, `${n.number}/${n.series}`, n.recipient, money.format(n.value)]),
-      theme: 'grid',
-      headStyles: { fillColor: [31, 41, 55] },
-      styles: { fontSize: 8, cellPadding: 2.2, overflow: 'linebreak' },
-      columnStyles: { 0: { cellWidth: 23 }, 1: { cellWidth: 18 }, 2: { cellWidth: 27 }, 4: { cellWidth: 28, halign: 'right' } },
-      didDrawPage: data => addFooter(doc, data.pageNumber)
-    })
-
-    const totalPages = doc.getNumberOfPages()
-    for (let i = 1; i <= totalPages; i++) {
-      doc.setPage(i)
-      doc.setFontSize(8)
-      doc.setTextColor(100)
-      doc.text(`Página ${i} de ${totalPages}`, 196, 290, { align: 'right' })
-    }
+    const doc = buildMonthlyPdf({filtered,daily,fuels,issuerName:issuers.find(i => i.cnpj === issuer)?.name || '',issuer,month,year,reportType})
     trackUsage('pdf_generated',reportType)
     doc.save(`relatorio-fiscal-${reportType === 'summary' ? 'resumo' : 'completo'}-${issuer}-${year}-${month}.pdf`)
     } catch (error) { setErrors([{file: 'Geração do relatório', reason: error.message}]) }
     finally { setGenerating(false) }
   }
 
-  function addFooter(doc) {
-    doc.setDrawColor(220)
-    doc.line(14, 285, 196, 285)
-    doc.setFontSize(8)
-    doc.setTextColor(100)
-    
-  }
-
   const summaryRef = useRef(null)
-  summaryRef.current = {documents: filtered.length, days:daily.length, total:filtered.reduce((sum,n)=>sum+n.value,0), month, year}
+  summaryRef.current = {documents: filtered.length, days:daily.length, total:filtered.reduce((sum,n)=>sum+n.value,0), month, year, fuelLitres:formatLitres(fuels.scaledTotal)}
   useEffect(() => {
     const context = document.modelContext
     if (!context?.registerTool) return
@@ -283,11 +179,18 @@ export default function App({ authorizeReport }) {
       <article><span className={errors.length ? 'warn' : ''}>{errors.length ? <TriangleAlert/> : <CheckCircle2/>}</span><div><small>XMLs não processados</small><strong>{errors.length}</strong></div></article>
     </section>
 
+    {!!notes.length && <section className="panel table-panel fuel-panel" aria-label="Litragem de combustíveis">
+      <div className="section-title"><div><h2>Litragem de combustíveis</h2><p>Vendas ao consumidor (CFOP 5656/6656), por código ANP. Quantidades somadas sem arredondar os itens.</p></div><strong className="fuel-total">{formatLitres(fuels.scaledTotal)} L</strong></div>
+      <div className="table-wrap"><table><thead><tr><th>Produto no XML</th><th>Código ANP</th><th>Quantidade (L)</th></tr></thead><tbody>{fuels.groups.length ? fuels.groups.map(g => <tr key={g.anp}><td>{g.name}</td><td>{g.anp}</td><td>{formatLitres(g.scaledLitres)}</td></tr>) : <tr><td colSpan="3" className="empty">Nenhum combustível elegível em litros no período.</td></tr>}</tbody><tfoot><tr><th colSpan="2">Total apurado</th><th>{formatLitres(fuels.scaledTotal)} L</th></tr></tfoot></table></div>
+      <p className="fuel-note">Litragem dos documentos selecionados; não representa estoque físico. Usamos qCom quando uCom está em litros; caso contrário, qTrib se uTrib estiver em litros. Não convertemos kg ou m³ por estimativa. As descrições são as informadas nos XMLs.</p>
+      {!!fuels.issues.length && <details className="fuel-warnings"><summary>{fuels.issues.length} item(ns) fora da apuração de litros — conferir</summary><div className="table-wrap"><table><thead><tr><th>Arquivo / nota / item</th><th>Produto / ANP</th><th>Motivo</th></tr></thead><tbody>{fuels.issues.map((issue,i) => <tr key={i}><td>{issue.file}<br/>{issue.number} / {issue.item}</td><td>{issue.name}<br/>{issue.anp || 'Sem código ANP'}</td><td>{issue.reason}</td></tr>)}</tbody></table></div></details>}
+    </section>}
+
     <section className="panel table-panel">
       <div className="section-title"><div><h2>Resumo dia a dia</h2><p>{folderName ? `Pasta: ${folderName}` : 'Selecione uma pasta para começar.'}</p></div></div>
       <div className="table-wrap"><table>
-        <thead><tr><th>Data</th><th>Documentos</th><th>NF-e</th><th>NFC-e</th><th>Valor do dia</th></tr></thead>
-        <tbody>{daily.length ? daily.map(d => <tr key={d.date.toISOString()}><td>{dateLabel.format(d.date)}</td><td>{d.quantity}</td><td>{d.nfe}</td><td>{d.nfce}</td><td>{money.format(d.value)}</td></tr>) : <tr><td colSpan="5" className="empty">Nenhum documento encontrado para o período selecionado.</td></tr>}</tbody>
+        <thead><tr><th>Data</th><th>Documentos</th><th>NF-e</th><th>NFC-e</th><th>Valor do dia</th><th>Combustíveis (L)</th></tr></thead>
+        <tbody>{daily.length ? daily.map(d => <tr key={d.date.toISOString()}><td>{dateLabel.format(d.date)}</td><td>{d.quantity}</td><td>{d.nfe}</td><td>{d.nfce}</td><td>{money.format(d.value)}</td><td>{formatLitres(d.scaledLitres)}</td></tr>) : <tr><td colSpan="6" className="empty">Nenhum documento encontrado para o período selecionado.</td></tr>}</tbody>
       </table></div>
     </section>
 

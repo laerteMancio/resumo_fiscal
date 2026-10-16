@@ -1,6 +1,26 @@
-# Resumo Fiscal — assinaturas Hotmart (v2)
+# Resumo Fiscal — assinaturas Hotmart e litragem (v2.1)
 
 Projeto React/Vite original com autenticação Supabase, autorização no backend Vercel e integração Hotmart 2.0.0. Preserve o domínio atual. Este pacote não foi publicado nem conectado às suas contas.
+
+## Atualização 2.1 — litragem de combustíveis
+
+- Quadro por produto/código ANP e total em litros na tela e nos dois tipos de PDF.
+- Coluna de litros no resumo diário, respeitando empresa, mês e ano selecionados.
+- Soma exata com quatro casas decimais, sem arredondar cada item.
+- Prioriza qCom quando uCom está em L, LT, LTS, LITRO ou LITROS. Somente se a unidade comercial não for litros, usa qTrib quando uTrib for litros. Nunca soma as duas quantidades do mesmo item.
+- Somente vendas normais de saída (tpNF=1 e finNFe=1), CFOP 5656/6656 e lista explícita de códigos ANP de combustíveis de varejo. Entradas, devoluções, complementares e outras operações ficam fora da litragem. Os totais monetários originais mantêm o critério anterior.
+- Não usa termos como “litro” na descrição para somar galões/lubrificantes. Produtos desconhecidos, unidades incompatíveis e operações excluídas geram avisos de conferência na tela; o PDF informa a quantidade de itens excluídos.
+- Nomes vêm dos XMLs e o agrupamento usa o código ANP. Descrições divergentes no cadastro de origem devem ser verificadas pelo operador.
+- Notas canceladas ou sem autorização e chaves duplicadas não entram. Documentos que referenciam outra nota autorizada importada são excluídos da litragem e sinalizados para revisão. Sem os arquivos referenciados ou os eventos de cancelamento, não é possível conciliar tudo automaticamente.
+- GNV em m³ e combustíveis em kg não são convertidos por estimativa. A lista ANP é conservadora e pode precisar de ampliação para outros produtos/operações. Consulte `src/fuels.js`.
+
+Validação: arquivo real com 3.474 NFC-e e 15.100 itens de combustível, conferido contra soma decimal independente: 328.785,8855 L. As amostras fiscais do cliente não acompanham este pacote.
+
+Para atualizar a implantação existente, substitua o código no repositório ligado à Vercel e faça deploy. Preserve as variáveis já configuradas. **Não execute novamente supabase/schema.sql:** esta atualização não altera tabelas, contas, permissões ou integração Hotmart. Antes de substituir, incorpore eventuais alterações que tenha feito no código após o pacote anterior.
+
+As páginas do PDF foram renderizadas e conferidas. Os testes locais cobrem soma, unidades, produtos não elegíveis, documentos excluídos, duplicidade e geração dos dois PDFs. A conferência em navegador autenticado deve ser feita na implantação.
+
+Referência de identificação dos produtos ANP: Portal NF-e, tabela ANP e NT 2026.002 (lista de combustíveis de varejo). https://www.nfe.fazenda.gov.br/portal/
 
 ## O que está pronto
 
